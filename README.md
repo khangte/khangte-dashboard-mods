@@ -9,28 +9,51 @@ Claude Code를 작은 대시보드로 바꿔 주는 플러그인입니다.
 
 ## 설치
 
-터미널의 Claude Code 입력창에서:
+마켓플레이스를 먼저 추가한 뒤 플러그인을 설치합니다.
 
+Claude Code
 ```
-/plugin install khangte-dashboard-mods --marketplace khangte/khangte-dashboard-mods
-```
-
-셸에서:
-
-```bash
-claude plugin install khangte-dashboard-mods --marketplace khangte/khangte-dashboard-mods
+/plugin marketplace add khangte/khangte-dashboard-mods
+/plugin install khangte-dashboard-mods@my-mods
 ```
 
-처음 한 번은 `Add marketplace?`가 나옵니다. `y`로 답하고, 범위는 맨 위의 user를 Enter로 고르면 됩니다.
+Shell
+```
+claude plugin marketplace add khangte/khangte-dashboard-mods
+claude plugin install khangte-dashboard-mods@my-mods
+```
+
+설치 범위를 묻는 화면이 나오면 맨 위의 user를 Enter로 고르면 됩니다.
 
 데스크톱 앱에서는 입력창 옆 **+** → Plugins → Add marketplace에 `khangte/khangte-dashboard-mods`를 넣고 Add plugin을 누릅니다.
 
 명령어(`/todo` 등)는 대화가 시작될 때 등록됩니다. 대화 도중에 처음 설치했다면 새 대화에서 사용하십시오.
 
-## 업데이트와 삭제
+### 업데이트
 
-```bash
+Claude Code
+```
+/plugin marketplace update my-mods
+/plugin update khangte-dashboard-mods@my-mods
+```
+
+Shell
+```
+claude plugin marketplace update my-mods
 claude plugin update khangte-dashboard-mods@my-mods
+```
+
+> 업데이트 뒤에는 `/reload-plugins`를 입력하거나 새 대화를 열면 반영됩니다.
+
+### 삭제
+
+Claude Code
+```
+/plugin uninstall khangte-dashboard-mods@my-mods
+```
+
+Shell
+```
 claude plugin uninstall khangte-dashboard-mods@my-mods
 ```
 
