@@ -1,0 +1,18 @@
+# written by Claude Code for the editor; each install makes its own
+.claude-plugin/types/
+
+# dependencies and caches
+node_modules/
+.mcpb-cache/
+
+# logs
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*~

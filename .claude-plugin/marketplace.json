@@ -1,0 +1,6 @@
+{
+  "name": "my-mods",
+  "owner": { "name": "khangte" },
+  "description": "Claude Code dashboard mods: usage band, 🎛 Claude 도구, 🗓 오늘 할 일, cheering spinner",
+  "plugins": [{ "name": "khangte-dashboard-mods", "source": "./" }]
+}
