@@ -10,7 +10,7 @@ import type { Hours, Settings, Sys, TodoTask, Usage } from '../../types'
 
 import { BANDS, DEFAULT_SETTINGS, FEATURES, normalize, shift, toggle, visible } from './layout'
 import { DEFAULT_HOURS, leaveView, parseHours } from './leave'
-import { C, EFFORTS, MODELS, planAfter, planView, ringSvg, ringText, thinBarSvg } from './control'
+import { C, EFFORTS, MODELS, planAfter, planView, ringSvg, ringText, thinBarSvg, usePalette } from './control'
 import { maskText } from './shield'
 
 const usage = atom({ plugin: 'khangte-dashboard-mods', key: 'usage' } as const, null)
@@ -27,6 +27,10 @@ const tick = atom({ plugin: 'khangte-dashboard-mods', key: 'tick' } as const, 0)
 const settings = atom({ plugin: 'khangte-dashboard-mods', key: 'settings' } as const, DEFAULT_SETTINGS)
 const isShielded = atom({ plugin: 'khangte-dashboard-mods', key: 'isShielded' } as const, true) // starts on, every session
 const PANE = 'mods-settings'
+const SCHEMES = [
+  { id: 'dark', label: '어둡게' },
+  { id: 'light', label: '밝게' },
+] as const
 const STORE_KEY = 'mods-settings'
 const plan = atom({ plugin: 'khangte-dashboard-mods', key: 'plan' } as const, null)
 const effort = atom({ plugin: 'khangte-dashboard-mods', key: 'effort' } as const, '')
@@ -39,11 +43,6 @@ const MEMO_TITLE = '📝 다음 요청 메모'
 const CONTROL = 'control-center'
 const CONTROL_TITLE = '🎛 Claude 도구'
 
-const NAVY = '#0f1b3d'
-const NAME = '#e6ebf5'
-const GRAY = '#b8c0cc'
-const ORANGE = '#fb923c'
-const DOTS = '#7a8499'
 const ROW_PX = 22 // px a band row takes on desktop: its 18px pictures plus a little air
 const STRUT = `<svg xmlns="http://www.w3.org/2000/svg" width="1" height="${ROW_PX}"/>`
 const HEIGHT = 18 // px: the dog (9 dots of 2px) exactly; no band picture is taller than a line
@@ -91,7 +90,7 @@ const barSvg = (width: number, pct: number | undefined, color: string) => {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${HEIGHT}" viewBox="0 0 ${width} ${HEIGHT}">` +
     `<defs><pattern id="d" width="4" height="4" patternUnits="userSpaceOnUse">` +
-    `<rect width="4" height="4" fill="#26314d"/><circle cx="2" cy="2" r="0.9" fill="${DOTS}"/></pattern></defs>` +
+    `<rect width="4" height="4" fill="${C.dotsBg}"/><circle cx="2" cy="2" r="0.9" fill="${C.dots}"/></pattern></defs>` +
     `<rect x="0" y="4" width="${width}" height="10" fill="url(#d)"/>` +
     `<rect x="0" y="4" width="${fill}" height="10" fill="${color}"/></svg>`
   )
@@ -199,15 +198,11 @@ const DOG = [
   '.DD.DD..DD.DD..',
 ]
 const DOG_COLORS: Record<string, string> = { B: '#B07A42', D: '#6E4123', K: '#1B1B1B', L: '#E2C08E' }
-const TRAIL = '#EF4444'
-const TEAL = '#2dd4bf'
-const BOX_EMPTY = '#334155'
 const BOX_H = 10 // px: a slim gauge, well under a text line
-const REST = '#aab3c5'
 const DOG_W = 30
 
 /** Only the two leg rows move: the whole pair of rows slides one dot on the second frame. */
-export const dogSvg = (x: number, width: number, step: 0 | 1, trail = TRAIL) => {
+export const dogSvg = (x: number, width: number, step: 0 | 1, trail = C.trail) => {
   const rects = DOG.map((row, r) => {
     const line = r >= 7 && step === 1 ? '.' + row.slice(0, -1) : row
     return [...line.matchAll(/B+|D+|K+|L+/g)]
@@ -217,7 +212,7 @@ export const dogSvg = (x: number, width: number, step: 0 | 1, trail = TRAIL) => 
   const reached = Math.min(width, x + DOG_W / 2)
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${HEIGHT}" viewBox="0 0 ${width} ${HEIGHT}">` +
-    `<rect x="0" y="16" width="${width}" height="2" fill="${REST}"/>` +
+    `<rect x="0" y="16" width="${width}" height="2" fill="${C.rest}"/>` +
     `<rect x="0" y="16" width="${reached}" height="2" fill="${trail}"/>${rects}</svg>`
   )
 }
@@ -252,7 +247,7 @@ export const boxGaugeSvg = (done: number, total: number, width: number) => {
   const gap = total > 12 ? 2 : 4
   const w = Math.max(2, (width - gap * (total - 1)) / total)
   const rects = Array.from({ length: total }, (_, i) =>
-    `<rect x="${(i * (w + gap)).toFixed(1)}" y="0" width="${w.toFixed(1)}" height="${BOX_H}" rx="2" fill="${i < done ? TEAL : BOX_EMPTY}"/>`,
+    `<rect x="${(i * (w + gap)).toFixed(1)}" y="0" width="${w.toFixed(1)}" height="${BOX_H}" rx="2" fill="${i < done ? C.teal : C.boxEmpty}"/>`,
   ).join('')
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${BOX_H}" viewBox="0 0 ${width} ${BOX_H}">${rects}</svg>`
 }
@@ -371,6 +366,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: CONTROL }, async ($, e) => {
+    await usePalette($)
     const r = $.ui.resolve(e)
     const { Box, Button, Text } = r
     const cfg = normalize(await read($, settings))
@@ -527,6 +523,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    await usePalette($)
     const { Box, Button, Text } = $.ui.resolve(e)
     const cfg = normalize(await read($, settings))
     const change = async (fn: (s: Settings) => Settings) => {
@@ -557,6 +554,10 @@ export const register: Register = on => {
       </Box>
     )
 
+    const divider = (key: string) => (
+      <Text key={key} color={C.pale} wrap="truncate">{'─'.repeat(Math.max(10, e.props.bodyColumns - 2))}</Text>
+    )
+
     return (
       <Box flexDirection="column" rowGap={gap} paddingX={1}>
         <Text weight="bold">입력창 위 띠</Text>
@@ -572,6 +573,17 @@ export const register: Register = on => {
             ])
           })}
         </Box>
+        {divider('set-line-0')}
+        <Text weight="bold">🎨 색상</Text>
+        <Text dimColor>어두운 화면이면 어둡게, 흰 화면이면 밝게를 고르세요.</Text>
+        <Box {...line} flexDirection="row" alignItems="center" columnGap={1}>
+          {SCHEMES.map(sc => (
+            <Button key={`scheme-${sc.id}`} variant={cfg.scheme === sc.id ? 'primary' : 'secondary'} onPress={() => change(s => ({ ...s, scheme: sc.id }))}>
+              {sc.label}
+            </Button>
+          ))}
+        </Box>
+        {divider('set-line-1')}
         <Text weight="bold">그 밖의 모드</Text>
         <Box flexDirection="column" rowGap={gap}>
           {FEATURES.map(it => item(it.id, `${it.icon} ${it.name}`, cfg.enabled[it.id] !== false, [switchOf(it.id)]))}
@@ -615,6 +627,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
+    await usePalette($)
 
     const u = (await read($, usage)) ?? {}
     const s = (await read($, sys)) ?? {}
@@ -627,9 +640,9 @@ export const register: Register = on => {
     const isTerminal = e.surface === 'terminal'
     const { bar, showReset } = fit(e.props.bodyColumns, isTerminal ? 20 : 120 / PX_PER_CELL)
     const cells: Cell[] = [
-      { icon: '⏱', name: 'SESSION', color: '#2dd4bf', pct: u.session, reset: u.sessionReset, hasReset: true },
-      { icon: '📅', name: 'WEEK', color: '#4ade80', pct: u.week, reset: u.weekReset, hasReset: true },
-      { icon: weather(u.context), name: 'CONTEXT', color: '#7dd3fc', pct: u.context, hasReset: false },
+      { icon: '⏱', name: 'SESSION', color: C.teal, pct: u.session, reset: u.sessionReset, hasReset: true },
+      { icon: '📅', name: 'WEEK', color: C.green, pct: u.week, reset: u.weekReset, hasReset: true },
+      { icon: weather(u.context), name: 'CONTEXT', color: C.cyan, pct: u.context, hasReset: false },
     ]
     const r = $.ui.resolve(e)
     const { Box, Button, Text } = r
@@ -640,7 +653,7 @@ export const register: Register = on => {
         return (
           <Text wrap="truncate">
             <Text color={color}>{'█'.repeat(f)}</Text>
-            <Text color={DOTS}>{'░'.repeat(bar - f)}</Text>
+            <Text color={C.dots}>{'░'.repeat(bar - f)}</Text>
           </Text>
         )
       }
@@ -650,20 +663,20 @@ export const register: Register = on => {
     }
 
     const row = (cells: Cell[], key: string) => (
-      <Box key={key} flexDirection="row" flexWrap="nowrap" alignItems="center" overflow="hidden" backgroundColor={NAVY} paddingX={1}>
+      <Box key={key} flexDirection="row" flexWrap="nowrap" alignItems="center" overflow="hidden" backgroundColor={C.navy} paddingX={1}>
         {cells.map((c, i) => {
-          const color = (c.pct ?? 0) > 80 ? ORANGE : c.color
+          const color = (c.pct ?? 0) > 80 ? C.orange : c.color
           const pct = c.pct === undefined ? '–' : `${Math.round(c.pct)}%`
           return (
             <Box key={c.name} flexDirection="row" flexWrap="nowrap" alignItems="center" flexShrink={0}>
-              {i > 0 ? <Text mono size="footnote" color={GRAY} wrap="truncate">{' │ '}</Text> : null}
-              <Text mono size="footnote" color={NAME} wrap="truncate">{`${c.icon} `}</Text>
+              {i > 0 ? <Text mono size="footnote" color={C.gray} wrap="truncate">{' │ '}</Text> : null}
+              <Text mono size="footnote" color={C.name} wrap="truncate">{`${c.icon} `}</Text>
               {c.noBar ? null : (
-                <Text mono size="footnote" weight="bold" color={NAME} wrap="truncate">{`${c.name} [`}</Text>
+                <Text mono size="footnote" weight="bold" color={C.name} wrap="truncate">{`${c.name} [`}</Text>
               )}
               {c.noBar ? null : drawBar(c, color)}
-              {c.noBar ? null : <Text mono size="footnote" weight="bold" color={NAME} wrap="truncate">{']'}</Text>}
-              <Text mono tabular size="footnote" color={GRAY} wrap="truncate">
+              {c.noBar ? null : <Text mono size="footnote" weight="bold" color={C.name} wrap="truncate">{']'}</Text>}
+              <Text mono tabular size="footnote" color={C.gray} wrap="truncate">
                 {c.noBar ? pct : ` ${pct}`}
                 {c.hasReset && showReset ? ` ↻${left(c.reset, now)}` : ''}
                 {c.extra ? ` ${c.extra}` : ''}
@@ -676,9 +689,9 @@ export const register: Register = on => {
 
     const ram = s.ramUsedGb === undefined ? '–' : `${s.ramUsedGb.toFixed(1)}/${s.ramTotalGb}GB`
     const sysCells: Cell[] = [
-      { icon: '🖥', name: 'CPU', color: '#2dd4bf', pct: s.cpu, hasReset: false },
-      { icon: '🧠', name: 'RAM', color: '#4ade80', pct: s.ram, hasReset: false, extra: ram },
-      { icon: '🔋', name: 'BAT', color: '#7dd3fc', pct: s.battery, hasReset: false, noBar: true },
+      { icon: '🖥', name: 'CPU', color: C.teal, pct: s.cpu, hasReset: false },
+      { icon: '🧠', name: 'RAM', color: C.green, pct: s.ram, hasReset: false, extra: ram },
+      { icon: '🔋', name: 'BAT', color: C.cyan, pct: s.battery, hasReset: false, noBar: true },
     ]
 
     const leave = leaveView(now, wh)
@@ -694,7 +707,7 @@ export const register: Register = on => {
     const buttonRow = isTerminal ? {} : { minHeight: 2, rowGap: 1 }
     // Every band opens the same way: an icon and a bold label, then its content.
     const tag = (icon: string, name: string) => (
-      <Text mono size="footnote" color={NAME} wrap="truncate">
+      <Text mono size="footnote" color={C.name} wrap="truncate">
         {`${icon} `}
         <Text weight="bold">{name}</Text>
         {' '}
@@ -707,7 +720,7 @@ export const register: Register = on => {
     const dayRatio = leave.meter ? leave.meter.pct / 100 : leave.kind === 'cheer' || leave.kind === 'over' ? 1 : 0
     const hasTrack = leave.kind !== 'rest'
     isWalking = leave.meter !== undefined
-    const trail = isUrgent ? ORANGE : TRAIL
+    const trail = isUrgent ? C.orange : C.trail
     const track = () => {
       if (e.surface === 'terminal' || !('Svg' in r)) {
         const n = trackChars
@@ -717,7 +730,7 @@ export const register: Register = on => {
             {'🏠'}
             <Text color={trail}>{'─'.repeat(pos)}</Text>
             {'🐕'}
-            <Text color={REST}>{'─'.repeat(n - 2 - pos)}</Text>
+            <Text color={C.rest}>{'─'.repeat(n - 2 - pos)}</Text>
             {'🚩'}
           </Text>
         )
@@ -744,14 +757,14 @@ export const register: Register = on => {
     const gaugeCells = Math.max(boxes.total * 2, Math.round(leaveCells - cellWidth('☑ 오늘 할 일 ') - cellWidth(countText)))
     const leaveBody =
       leave.kind === 'cheer' ? (
-        <Text size="title" weight="bold" color={ORANGE} wrap="truncate">{leave.text}</Text>
+        <Text size="title" weight="bold" color={C.orange} wrap="truncate">{leave.text}</Text>
       ) : leave.meter ? (
         <Text mono tabular size="footnote" wrap="truncate">
-          <Text color={isUrgent ? ORANGE : GRAY}>{`${leave.meter.clock} 남음 · ${leave.meter.pct}%`}</Text>
-          {leave.kind === 'tidy' ? <Text color={ORANGE}>{'  정리할 시간이에요 🧹'}</Text> : ''}
+          <Text color={isUrgent ? C.orange : C.gray}>{`${leave.meter.clock} 남음 · ${leave.meter.pct}%`}</Text>
+          {leave.kind === 'tidy' ? <Text color={C.orange}>{'  정리할 시간이에요 🧹'}</Text> : ''}
         </Text>
       ) : (
-        <Text mono size="footnote" color={GRAY} wrap="truncate">{leave.text}</Text>
+        <Text mono size="footnote" color={C.gray} wrap="truncate">{leave.text}</Text>
       )
 
     const workWidth = Math.max(80, Math.min(240, (e.props.bodyColumns - 40) * PX_PER_CELL))
@@ -761,12 +774,12 @@ export const register: Register = on => {
       // One box per task of today's /todo list, filled as each is done; the boxes share the row's width.
       todo:
         boxes.total > 0 ? (
-          <Box key="todo" flexDirection="row" alignItems="center" columnGap={1} backgroundColor={NAVY} paddingX={1}>
+          <Box key="todo" flexDirection="row" alignItems="center" columnGap={1} backgroundColor={C.navy} paddingX={1}>
             {tag('☑', '오늘 할 일')}
             {isTextOnly ? (
               <Text mono wrap="truncate">
                 {boxGaugeText(boxes.done, boxes.total, gaugeCells).map((b, i) => (
-                  <Text color={b.isDone ? TEAL : BOX_EMPTY}>{(i > 0 ? ' ' : '') + b.text}</Text>
+                  <Text color={b.isDone ? C.teal : C.boxEmpty}>{(i > 0 ? ' ' : '') + b.text}</Text>
                 ))}
               </Text>
             ) : (
@@ -777,36 +790,36 @@ export const register: Register = on => {
                 height={BOX_H}
               />
             )}
-            <Text mono tabular size="footnote" weight="bold" color={NAME}>{countText}</Text>
+            <Text mono tabular size="footnote" weight="bold" color={C.name}>{countText}</Text>
           </Box>
         ) : null,
       plan: work ? (
-        <Box key="plan" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} backgroundColor={NAVY} paddingX={1}>
+        <Box key="plan" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} backgroundColor={C.navy} paddingX={1}>
           {tag('📋', '이번 작업')}
           {isTerminal || !('Svg' in r) ? (
             <Text mono wrap="truncate">
-              <Text color={TEAL}>{'▰'.repeat(workFill)}</Text>
-              <Text color={DOTS}>{'▱'.repeat(20 - workFill)}</Text>
+              <Text color={C.teal}>{'▰'.repeat(workFill)}</Text>
+              <Text color={C.dots}>{'▱'.repeat(20 - workFill)}</Text>
             </Text>
           ) : (
             <r.Svg source={thinBarSvg(work.ratio, workWidth)} alt={`이번 작업 ${work.done}/${work.total}`} width={workWidth} height={10} />
           )}
-          <Text mono tabular size="footnote" color={GRAY} wrap="truncate">
+          <Text mono tabular size="footnote" color={C.gray} wrap="truncate">
             {`${work.done}/${work.total} · ${work.now ? `${work.now} 중` : '완료 ✓'}`}
           </Text>
         </Box>
       ) : null,
       shield: (
-        <Box key="shield" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} backgroundColor={NAVY} paddingX={1}>
+        <Box key="shield" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} backgroundColor={C.navy} paddingX={1}>
           {tag(isMasked ? '🙈' : '👁', '가림')}
-          <Text mono size="footnote" color={isMasked ? NAME : ORANGE} weight="bold">{isMasked ? '켜짐' : '꺼짐'}</Text>
-          <Text mono size="footnote" color={GRAY} wrap="truncate">
+          <Text mono size="footnote" color={isMasked ? C.name : C.orange} weight="bold">{isMasked ? '켜짐' : '꺼짐'}</Text>
+          <Text mono size="footnote" color={C.gray} wrap="truncate">
             {isMasked ? '· 이메일·전화번호를 가려서 보여요' : '· 원래대로 보이는 중'}
           </Text>
         </Box>
       ),
       chips: nextChips.length === 0 ? null : (
-        <Box key="next" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} rowGap={isTerminal ? 0 : 1} backgroundColor={NAVY} paddingX={1}>
+        <Box key="next" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} rowGap={isTerminal ? 0 : 1} backgroundColor={C.navy} paddingX={1}>
           {tag('⚡', '빠른 요청')}
           {nextChips.map((c, i) => (
             <Button
@@ -822,7 +835,7 @@ export const register: Register = on => {
       usage: row(cells, 'usage'),
       sys: row(sysCells, 'sys'),
       leave: (
-        <Box key="leave" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} backgroundColor={NAVY} paddingX={1}>
+        <Box key="leave" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1} backgroundColor={C.navy} paddingX={1}>
           {tag('🏃', '퇴근')}
           {hasTrack ? track() : null}
           {leaveBody}
@@ -857,12 +870,12 @@ export const register: Register = on => {
     )
 
     return (
-      <Box flexDirection="column" paddingLeft={1} backgroundColor={NAVY}>
+      <Box flexDirection="column" paddingLeft={1} backgroundColor={C.navy}>
         {list.map(id =>
           nodes[id] === null ? null : (
             // one line per band, held a touch taller than its 18px pictures by an invisible strut so rows breathe evenly;
             // the button row (칩) keeps two lines on desktop, since a button stands taller than text
-            <Box key={`slot-${id}`} flexDirection="row" alignItems="center" backgroundColor={NAVY} {...(isTerminal || id !== 'chips' ? {} : { minHeight: 2 })}>
+            <Box key={`slot-${id}`} flexDirection="row" alignItems="center" backgroundColor={C.navy} {...(isTerminal || id !== 'chips' ? {} : { minHeight: 2 })}>
               {isTerminal || !('Svg' in r) ? null : <r.Svg source={STRUT} alt=" " width={1} height={ROW_PX} />}
               <Box flexDirection="column" flexGrow={1}>
                 {nodes[id]}
@@ -870,7 +883,7 @@ export const register: Register = on => {
             </Box>
           ),
         )}
-        <Box key="gear-row" {...buttonRow} flexDirection="row" alignItems="center" justifyContent="flex-end" backgroundColor={NAVY}>
+        <Box key="gear-row" {...buttonRow} flexDirection="row" alignItems="center" justifyContent="flex-end" backgroundColor={C.navy}>
           {gear}
         </Box>
       </Box>

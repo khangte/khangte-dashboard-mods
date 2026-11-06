@@ -110,8 +110,8 @@ for (const surface of ['desktop', 'terminal'] as const) {
 
     await time.advance(31_000) // past the minute
     expect(pomo()).toMatchObject({ mode: 'rest', status: 'running', done: 1 })
-    expect(toasts).toEqual(['🍅 집중 1분 끝! 1분 쉬어요'])
-    expect(notes).toEqual(['🍅 집중 1분 끝! 1분 쉬어요'])
+    expect(toasts).toEqual(['🟢 집중 01:00 시작!', '🔴 집중 1분 끝! 1분 쉬어요']) // started, then ended
+    expect(notes).toEqual(['🟢 집중 01:00 시작!', '🔴 집중 1분 끝! 1분 쉬어요'])
     expect(kept.get('pomo-done')).toEqual({ day: DAY, done: 1 })
     ;({ ui, texts } = await pane())
     expect(texts.some(t => t.startsWith('휴식 1분 · 완료 🍅'))).toBe(true)
@@ -120,7 +120,7 @@ for (const surface of ['desktop', 'terminal'] as const) {
 
     await time.advance(60_000) // the rest ends: back to focus on its own
     expect(pomo()).toMatchObject({ mode: 'focus', status: 'running', done: 1 })
-    expect(toasts.at(-1)).toBe('☕ 휴식 끝! 다시 1분 집중해요')
+    expect(toasts.at(-1)).toBe('🟢 휴식 끝! 다시 1분 집중해요')
 
     // pause holds the time; ↺ goes back to a stopped focus; then restore 25 / 5
     ;({ ui } = await pane())
@@ -149,3 +149,27 @@ for (const surface of ['desktop', 'terminal'] as const) {
     await ui.unmount()
   })
 }
+
+for (const surface of ['desktop', 'terminal'] as const) {
+  test(`minute fields set focus and rest; a bad number changes nothing (${surface})`, async ($, on) => {
+    mock.clock(on, { now: T0 })
+    const { mem, kept } = wire(on)
+    const toasts: string[] = []
+    on('ui.toast', (_: unknown, e: { text: string }) => (toasts.push(e.text), { value: undefined }))
+    await $.session.start({ cwd: '/', surface, isInteractive: true })
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.input({ key: 'pomo-focus', text: '40' }) // its own 적용: focus alone
+    expect(kept.get('pomo-minutes')).toBe('40 5')
+    await ui.input({ key: 'pomo-rest', text: '0' }) // out of range: nothing changes
+    expect(kept.get('pomo-minutes')).toBe('40 5')
+    await ui.input({ key: 'pomo-rest', text: '10' })
+    expect(mem.get('minutes')?.value).toEqual({ focus: 40, rest: 10 })
+    expect(toasts).toEqual(['집중 시간을 40분으로 바꿨어요', '1~180 사이의 분을 적어 주세요', '휴식 시간을 10분으로 바꿨어요'])
+    expect(await ui.find({ key: 'pomo-apply' })).toBeUndefined() // no shared button
+    await ui.unmount()
+    const again = await $.ui.mount({ ...PANE, surface })
+    expect((await again.findAll({ type: 'Text' })).map(t => t.text)).toContain('40:00') // the stopped timer took it
+    await again.unmount()
+  })
+}
+

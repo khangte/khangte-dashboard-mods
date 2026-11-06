@@ -1,8 +1,56 @@
-import type { Plan, PlanItem } from '../../types'
+import type { Plan, PlanItem, Settings } from '../../types'
+import { atom, read } from 'claude-code'
+import type { EngineInterface } from 'claude-code'
+import { DEFAULT_SETTINGS } from './layout'
 
-// One blue family, tuned for the dark app and a black terminal: light text on the app's own background.
+// Two palettes of one blue family. DARK is the original look (light text on the dark app and a black terminal);
+// LIGHT keeps the same roles with dark text for a white app or terminal.
 // deep = titles and strong text, mid = secondary text, blue = accents and fills, pale = tracks and borders.
-export const C = { deep: '#dbeafe', blue: '#60a5fa', mid: '#93c5fd', sky: '#bfdbfe', pale: '#1e3a8a', ice: '#0b1226', white: '#ffffff' }
+const DARK = {
+  deep: '#dbeafe', blue: '#60a5fa', mid: '#93c5fd', sky: '#bfdbfe', pale: '#1e3a8a', ice: '#0b1226', white: '#ffffff',
+  // the band above the prompt
+  navy: '#0f1b3d', name: '#e6ebf5', gray: '#b8c0cc', orange: '#fb923c', dots: '#7a8499', dotsBg: '#26314d',
+  teal: '#2dd4bf', green: '#4ade80', cyan: '#7dd3fc', boxEmpty: '#334155', rest: '#aab3c5', trail: '#EF4444',
+  red: '#ef4444', yellow: '#facc15',
+  // 🗓 오늘 할 일's cards, by tag, and a finished one
+  card: {
+    급함: { bg: '#1e40af', fg: '#ffffff', chipBg: '#3b82f6', chipFg: '#ffffff' },
+    중요: { bg: '#1e3a8a', fg: '#dbeafe', chipBg: '#2563eb', chipFg: '#ffffff' },
+    업무: { bg: '#172554', fg: '#bfdbfe', chipBg: '#1e3a8a', chipFg: '#bfdbfe' },
+  },
+  done: { bg: '#0f172a', fg: '#64748b', chipBg: '#1e293b', chipFg: '#94a3b8' },
+  doneBorder: '#1e293b',
+}
+type Palette = typeof DARK
+
+const LIGHT: Palette = {
+  deep: '#1e3a8a', blue: '#2563eb', mid: '#3b5b99', sky: '#1e40af', pale: '#bfdbfe', ice: '#eff6ff', white: '#ffffff',
+  navy: '#e8eefb', name: '#0f1b3d', gray: '#4b5563', orange: '#c2410c', dots: '#94a3b8', dotsBg: '#d5deef',
+  teal: '#0d9488', green: '#16a34a', cyan: '#0284c7', boxEmpty: '#cbd5e1', rest: '#94a3b8', trail: '#dc2626',
+  red: '#dc2626', yellow: '#ca8a04',
+  card: {
+    급함: { bg: '#dbeafe', fg: '#1e3a8a', chipBg: '#2563eb', chipFg: '#ffffff' },
+    중요: { bg: '#e0e7ff', fg: '#1e1b4b', chipBg: '#4f46e5', chipFg: '#ffffff' },
+    업무: { bg: '#f1f5f9', fg: '#1e293b', chipBg: '#cbd5e1', chipFg: '#1e293b' },
+  },
+  done: { bg: '#f8fafc', fg: '#94a3b8', chipBg: '#e2e8f0', chipFg: '#64748b' },
+  doneBorder: '#e2e8f0',
+}
+
+/** The palette drawn now: every render sets it first with `usePalette`. */
+export const C: Palette = { ...DARK }
+
+const settingsAtom = atom({ plugin: 'khangte-dashboard-mods', key: 'settings' } as const, DEFAULT_SETTINGS as Settings)
+
+/**
+ * Sets `C` to the palette ⚙ 모즈 설정's 🎨 색상 picks. Read through the state, so a render
+ * that calls it redraws when the choice changes.
+ * shortcut: one shared palette object, fine while every surface uses the same scheme; pass it down if they ever differ.
+ */
+export async function usePalette($: EngineInterface) {
+  const s = (await read($, settingsAtom)) as Settings | null
+  Object.assign(C, s?.scheme === 'light' ? LIGHT : DARK)
+}
 
 /** The two models the buttons switch between, by the id `/model` takes. */
 export const MODELS = [
@@ -53,7 +101,7 @@ export const planView = (plan: Plan | null) => {
 }
 
 /** A ring's colour by how full it is: blue, then yellow from 40%, orange from 60%, red from 80%. */
-export const ringColor = (pct: number) => (pct >= 80 ? '#ef4444' : pct >= 60 ? '#fb923c' : pct >= 40 ? '#facc15' : C.blue)
+export const ringColor = (pct: number) => (pct >= 80 ? C.red : pct >= 60 ? C.orange : pct >= 40 ? C.yellow : C.blue)
 
 /** A ring gauge: `pct` of the circle in blue on a pale track, the number in the middle; `–` when unread. */
 export const ringSvg = (pct: number | undefined, size = 72) => {

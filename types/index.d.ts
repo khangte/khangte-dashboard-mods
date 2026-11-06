@@ -18,7 +18,9 @@ export type TodoTask = { title: string; day: string; due?: string; done: boolean
 export type Hours = { start: string; end: string }
 
 /** Which items are on, and the top-to-bottom order of the bands. */
-export type Settings = { version?: number; enabled: Record<string, boolean>; order: string[] }
+export type Settings = { version?: number; enabled: Record<string, boolean>; order: string[]; scheme?: Scheme }
+/** 🎨 색상: the dark palette (the original) or the light one. */
+export type Scheme = 'dark' | 'light'
 
 /** Claude's own checklist for the work at hand, as its task-list calls left it. */
 export type PlanItem = { content: string; status: 'pending' | 'in_progress' | 'completed' }

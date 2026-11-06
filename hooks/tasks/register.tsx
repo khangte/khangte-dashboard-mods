@@ -3,7 +3,7 @@ import type { Settings } from '../../types'
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Minutes, Pomo, Tab, Tag, Task } from '../../types'
+import type { Minutes, Pomo, Tab, Task } from '../../types'
 
 import {
   DEFAULT_MINUTES, TOMATO_SIZE, advance, clock, freshPomo, parseMinutes, pause, progress, remaining, reset, rollDay, skip, start, tomatoSvg,
@@ -11,6 +11,7 @@ import {
 
 import { TABS, cleanTasks, dayOf, listFor, pairs, parseTodo, tabOf, thinBar, todayProgress, whenOf } from './tasks'
 import { DEFAULT_SETTINGS } from '../band/layout'
+import { C, usePalette } from '../band/control'
 
 const tasks = atom({ plugin: 'khangte-dashboard-mods', key: 'tasks' } as const, [])
 const tab = atom({ plugin: 'khangte-dashboard-mods', key: 'tab' } as const, '오늘')
@@ -24,20 +25,6 @@ const settings = atom({ plugin: 'khangte-dashboard-mods', key: 'settings' } as c
 
 export const PANE = 'today-tasks'
 export const TITLE = '🗓 오늘 할 일'
-
-// One blue family for a dark app and a black terminal: light text, deep blue surfaces.
-const TEXT = '#dbeafe' // titles, the timer
-const SUB = '#93c5fd' // secondary lines
-const ACCENT = '#60a5fa' // counts, highlights
-const LINE = '#1e3a8a' // borders
-const WHITE = '#ffffff'
-
-/** Each tag's card: background, text, and its chip. */
-const CARD: Record<Tag, { bg: string; fg: string; chipBg: string; chipFg: string }> = {
-  급함: { bg: '#1e40af', fg: WHITE, chipBg: '#3b82f6', chipFg: WHITE },
-  중요: { bg: '#1e3a8a', fg: TEXT, chipBg: '#2563eb', chipFg: WHITE },
-  업무: { bg: '#172554', fg: '#bfdbfe', chipBg: '#1e3a8a', chipFg: '#bfdbfe' },
-}
 
 async function save($: EngineInterface, list: Task[]) {
   await update($, tasks, () => list)
@@ -62,12 +49,51 @@ async function pomoTick($: EngineInterface) {
   const m = await read($, minutes)
   const { events } = advance(rollDay(p, dayOf(now)), now, m)
   if (events.length > 0 || p.day !== dayOf(now)) await setPomo($, (q, n, mm) => advance(q, n, mm).pomo)
-  for (const ev of events) {
-    const text = ev === 'focus-done' ? `🍅 집중 ${m.focus}분 끝! ${m.rest}분 쉬어요` : `☕ 휴식 끝! 다시 ${m.focus}분 집중해요`
-    $.ui.toast(text)
-    void $.ui.notify(text, { title: '포모도로' })
-  }
+  for (const ev of events) announce($, ev === 'focus-done' ? `🔴 집중 ${m.focus}분 끝! ${m.rest}분 쉬어요` : `🟢 휴식 끝! 다시 ${m.focus}분 집중해요`)
   await update($, tick, () => now)
+}
+
+/** A timer notice: a toast on every surface, and the terminal's own notification where it has one. */
+function announce($: EngineInterface, text: string) {
+  $.ui.toast(text, { timeoutMs: 6000 })
+  void $.ui.notify(text, { title: '🍅 집중 타이머' }).catch(() => undefined)
+}
+
+/** ▶ / ⏸: starts or resumes with a notice, or pauses. */
+async function togglePomo($: EngineInterface) {
+  const was = await read($, pomo)
+  const p = await setPomo($, (q, n) => (q.status === 'running' ? pause(q, n) : start(q, n)))
+  if (p.status !== 'running') return
+  const [mark, what] = p.mode === 'focus' ? ['🟢', '집중'] : ['🔴', '휴식']
+  announce($, was.status === 'paused' ? `${mark} ${what} 다시 시작 · ${clock(p.leftMs)} 남음` : `${mark} ${what} ${clock(p.leftMs)} 시작!`)
+}
+
+/** ↺: back to a stopped focus; a timer that was going says it stopped. */
+async function resetPomo($: EngineInterface) {
+  const was = await read($, pomo)
+  await setPomo($, (p, _, mm) => reset(p, mm))
+  if (was.status !== 'idle') announce($, '⏹ 집중 타이머를 멈췄어요')
+}
+
+/** Saves new focus and rest minutes: `/pomodoro` and the pane's fields both come here. */
+async function setMinutes($: EngineInterface, m: Minutes) {
+  await update($, minutes, () => m)
+  await $.store.set('pomo-minutes', `${m.focus} ${m.rest}`)
+  // A stopped timer takes the new length at once; a running one keeps its phase and uses it from the next.
+  await setPomo($, (p, _, mm) => (p.status === 'idle' ? { ...p, leftMs: (p.mode === 'focus' ? mm.focus : mm.rest) * 60_000 } : p))
+}
+
+/** What is typed in a minutes field, kept here and not in the state: the pane redraws every second. */
+const drafts: { focus?: string; rest?: string } = {}
+
+/** One field's 적용 (its Enter): that length alone; a bad number changes nothing. */
+async function applyMinute($: EngineInterface, k: 'focus' | 'rest', v: string) {
+  delete drafts[k]
+  const n = Number(v.trim())
+  if (!Number.isInteger(n) || n < 1 || n > 180) return $.ui.toast('1~180 사이의 분을 적어 주세요')
+  const cur = await read($, minutes)
+  await setMinutes($, { ...cur, [k]: n })
+  $.ui.toast(`${k === 'focus' ? '집중' : '휴식'} 시간을 ${n}분으로 바꿨어요`)
 }
 
 async function openPane($: EngineInterface) {
@@ -95,10 +121,7 @@ export const register: Register = on => {
   on('command.run', { command: 'pomodoro' }, async ($, e) => {
     const m = e.args.trim() === '' ? await read($, minutes) : parseMinutes(e.args)
     if (!m) return { text: '사용법: /pomodoro 25 5 (집중 분, 휴식 분, 1~180)' }
-    await update($, minutes, () => m)
-    await $.store.set('pomo-minutes', `${m.focus} ${m.rest}`)
-    // A stopped timer takes the new length at once; a running one keeps its phase and uses it from the next.
-    await setPomo($, (p, _, mm) => (p.status === 'idle' ? { ...p, leftMs: (p.mode === 'focus' ? mm.focus : mm.rest) * 60_000 } : p))
+    await setMinutes($, m)
     return { text: `포모도로: 집중 ${m.focus}분 · 휴식 ${m.rest}분` }
   })
 
@@ -111,7 +134,12 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    await usePalette($)
     const { Box, Button, Text } = $.ui.resolve(e)
+    const TEXT = C.deep // titles, the timer
+    const SUB = C.mid // secondary lines
+    const ACCENT = C.blue // counts, highlights
+    const LINE = C.pale // borders
     if (((await read($, settings)) as Settings | null)?.enabled?.tasks === false) {
       return <Text dimColor>오늘 할 일이 ⚙ 모즈 설정에서 꺼져 있어요.</Text>
     }
@@ -159,18 +187,35 @@ export const register: Register = on => {
           <Button
             key="pomo-toggle"
             variant={tp.status === 'running' ? 'secondary' : 'primary'}
-            onPress={() => setPomo($, (p, n) => (p.status === 'running' ? pause(p, n) : start(p, n)))}
+            onPress={() => togglePomo($)}
           >
             {tp.status === 'running' ? '⏸ 일시정지' : '▶ 시작'}
           </Button>
           <Button key="pomo-skip" onPress={() => setPomo($, (p, n, mm) => skip(p, n, mm))}>⏭ 건너뛰기</Button>
-          <Button key="pomo-reset" onPress={() => setPomo($, (p, _, mm) => reset(p, mm))}>↺ 처음으로</Button>
+          <Button key="pomo-reset" onPress={() => resetPomo($)}>↺ 처음으로</Button>
         </Box>
+        {'Input' in r ? (
+          <Box key="pomo-minutes" flexDirection="row" columnGap={2} alignItems="center" flexWrap="wrap" justifyContent="center">
+            {(['focus', 'rest'] as const).map(k => (
+              <r.Input
+                key={`pomo-${k}`}
+                label={k === 'focus' ? '집중(분)' : '휴식(분)'}
+                placeholder="1~180"
+                submitLabel="적용"
+                value={drafts[k] ?? String(m[k])}
+                onInput={v => {
+                  drafts[k] = v
+                }}
+                onSubmit={v => void applyMinute($, k, v)}
+              />
+            ))}
+          </Box>
+        ) : null}
       </Box>
     )
 
     const card = (t: Task) => {
-      const c = t.done ? { bg: '#0f172a', fg: '#64748b', chipBg: '#1e293b', chipFg: '#94a3b8' } : CARD[t.tag]
+      const c = t.done ? C.done : C.card[t.tag]
       return (
         <Box
           key={`card-${t.id}`}
@@ -179,7 +224,7 @@ export const register: Register = on => {
           flexDirection="column"
           justifyContent="space-between"
           borderStyle="round"
-          borderColor={t.done ? '#1e293b' : LINE}
+          borderColor={t.done ? C.doneBorder : LINE}
           backgroundColor={c.bg}
           paddingX={1}
         >

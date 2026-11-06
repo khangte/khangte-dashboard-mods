@@ -33,11 +33,12 @@ export const DEFAULT_SETTINGS: Settings = {
   version: LAYOUT_VERSION,
   enabled: Object.fromEntries([...BANDS, ...FEATURES].map(i => [i.id, true])),
   order: [...IDS],
+  scheme: 'dark',
 }
 
 /** What was saved, kept only where valid; a band missing from it (a newly added mod) joins at the end. */
 export const normalize = (raw: unknown): Settings => {
-  const r = (raw ?? {}) as { version?: unknown; enabled?: Record<string, unknown>; order?: unknown }
+  const r = (raw ?? {}) as { version?: unknown; enabled?: Record<string, unknown>; order?: unknown; scheme?: unknown }
   const enabled = { ...DEFAULT_SETTINGS.enabled }
   for (const id of Object.keys(enabled)) if (typeof r.enabled?.[id] === 'boolean') enabled[id] = r.enabled[id] as boolean
   const saved: unknown[] = r.version === LAYOUT_VERSION && Array.isArray(r.order) ? r.order : []
@@ -48,7 +49,8 @@ export const normalize = (raw: unknown): Settings => {
     const before = IDS.slice(0, i).reverse().find(p => order.includes(p)) // its nearest registry neighbour above
     order.splice(before === undefined ? 0 : order.indexOf(before) + 1, 0, id)
   })
-  return { version: LAYOUT_VERSION, enabled, order }
+  const scheme = r.scheme === 'light' ? 'light' : 'dark'
+  return { version: LAYOUT_VERSION, enabled, order, scheme }
 }
 
 export const toggle = (s: Settings, id: string): Settings => ({ ...s, enabled: { ...s.enabled, [id]: !s.enabled[id] } })
